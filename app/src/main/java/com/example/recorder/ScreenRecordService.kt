@@ -240,7 +240,12 @@ class ScreenRecordService : Service() {
 
         val hasMic = audioOptionName == AudioOption.MICROPHONE.name
         if (hasMic) {
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            try {
+                recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            } catch (e: Exception) {
+                // In environments without mic hardware/permission, continue safely without audio
+                android.util.Log.w("ScreenRecordService", "Could not acquire MIC source, fallback to muted: ${e.message}")
+            }
         }
 
         recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
@@ -250,15 +255,36 @@ class ScreenRecordService : Service() {
         recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
 
         if (hasMic) {
-            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            recorder.setAudioEncodingBitRate(128000)
-            recorder.setAudioSamplingRate(44100)
+            try {
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                recorder.setAudioEncodingBitRate(128000)
+                recorder.setAudioSamplingRate(44100)
+            } catch (e: Exception) {
+                android.util.Log.w("ScreenRecordService", "Could not configure AAC encoder: ${e.message}")
+            }
         }
 
         recorder.setVideoEncodingBitRate(recordingBitrateMbps * 1_000_000)
         recorder.setVideoFrameRate(recordingFps)
 
-        recorder.prepare()
+        try {
+            recorder.prepare()
+        } catch (e: Exception) {
+            android.util.Log.w("ScreenRecordService", "First prepare failed, falling back to safe 720p 30fps baseline: ${e.message}")
+            // Fallback to widely supported baseline resolution and framerate
+            recorder.reset()
+            recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setOutputFile(file.absolutePath)
+            recordingWidth = 720
+            recordingHeight = 1280
+            recordingFps = 30
+            recorder.setVideoSize(recordingWidth, recordingHeight)
+            recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+            recorder.setVideoEncodingBitRate(4_000_000)
+            recorder.setVideoFrameRate(recordingFps)
+            recorder.prepare()
+        }
         mediaRecorder = recorder
     }
 
